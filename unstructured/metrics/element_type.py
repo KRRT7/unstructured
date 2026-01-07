@@ -101,8 +101,5 @@ def _convert_to_frequency_without_depth(d: FrequencyDict) -> dict[str, int]:
     res: dict[str, int] = {}
     for k, v in d.items():
         element_type = k[0]
-        if element_type not in res:
-            res[element_type] = v
-        else:
-            res[element_type] += v
+        res[element_type] = res.get(element_type, 0) + v
     return res
