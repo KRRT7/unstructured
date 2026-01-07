@@ -452,7 +452,7 @@ class PreChunk:
         # -- efficient and definitely more robust than hoping two different computations of combined
         # -- length continue to get the same answer as the code evolves. Only possible because
         # -- `.combine()` is non-mutating.
-        combined_len = len(self.combine(pre_chunk)._text)
+        combined_len = self._calculate_combined_length(pre_chunk)
 
         return combined_len <= self._opts.hard_max
 
@@ -516,6 +516,23 @@ class PreChunk:
         that of the next by a blank line ("\n\n").
         """
         return self._opts.text_separator.join(self._iter_text_segments())
+
+    def _calculate_combined_length(self, other: PreChunk) -> int:
+        """Calculate combined text length without creating intermediate objects."""
+        total_length = len(self._text)
+
+        if self._elements and other._elements:
+            total_length += len(self._opts.text_separator)
+
+        text_separator = self._opts.text_separator
+        separator_len = len(text_separator)
+
+        for i, element in enumerate(other._elements):
+            if i > 0:
+                total_length += separator_len
+            total_length += len(element.text)
+
+        return total_length
 
 
 # ================================================================================================
