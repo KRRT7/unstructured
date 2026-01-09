@@ -439,6 +439,9 @@ class PreChunk:
         self._overlap_prefix = overlap_prefix
         self._opts = opts
 
+        self._text_cache: str | None = None
+        self._text_len_cache: int | None = None
+
     def __eq__(self, other: Any) -> bool:
         if not isinstance(other, PreChunk):
             return False
@@ -446,15 +449,28 @@ class PreChunk:
 
     def can_combine(self, pre_chunk: PreChunk) -> bool:
         """True when `pre_chunk` can be combined with this one without exceeding size limits."""
-        if len(self._text) >= self._opts.combine_text_under_n_chars:
+        self_len = self._text_length()
+        if self_len >= self._opts.combine_text_under_n_chars:
             return False
-        # -- avoid duplicating length computations by doing a trial-combine which is just as
-        # -- efficient and definitely more robust than hoping two different computations of combined
-        # -- length continue to get the same answer as the code evolves. Only possible because
-        # -- `.combine()` is non-mutating.
-        combined_len = len(self.combine(pre_chunk)._text)
 
-        return combined_len <= self._opts.hard_max
+        # Instead of creating a new PreChunk and concatenating text, sum cached lengths if possible
+        # This assumes the same opts/text_separator on the second chunk
+        # Adjust for joining if text_separator adds characters
+        other_len = pre_chunk._text_length()
+
+        # Account for the text separator(s) between combined elements if both are non-empty
+        sep_len = 0
+        if self._elements and pre_chunk._elements:
+            sep_len = len(self._opts.text_separator)
+        combined_len = self_len + other_len + sep_len
+
+        if combined_len <= self._opts.hard_max:
+            return True
+
+        # For complete compatibility, fall back to the original robust method in edge cases
+        # (for separator edge cases or if implementation details differ)
+        combined_len_fallback = len(self.combine(pre_chunk)._text)
+        return combined_len_fallback <= self._opts.hard_max
 
     def combine(self, other_pre_chunk: PreChunk) -> PreChunk:
         """Return new `PreChunk` that combines this and `other_pre_chunk`."""
@@ -516,6 +532,14 @@ class PreChunk:
         that of the next by a blank line ("\n\n").
         """
         return self._opts.text_separator.join(self._iter_text_segments())
+
+    def _text_length(self) -> int:
+        """Efficient length calculation with caching."""
+        if self._text_len_cache is not None:
+            return self._text_len_cache
+        text_len = len(self._text)
+        self._text_len_cache = text_len
+        return text_len
 
 
 # ================================================================================================
