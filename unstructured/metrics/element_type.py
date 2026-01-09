@@ -60,34 +60,41 @@ def calculate_element_type_percent_match(
     total_match_element_count = 0
 
     unmatched_depth_output: dict[str, int] = {}
-    unmatched_depth_source: dict[str, int] = {}
 
-    # loop through the output list to find match with source
-    for k, _ in output_copy.items():
-        if k in source_copy:
-            match_count = min(output_copy[k], source_copy[k])
+    # First pass: perform direct matches and accumulate unmatched by type
+    for k, v in output_copy.items():
+        output_count = v
+        source_count = source_copy.get(k, 0)
+        if source_count:
+            match_count = min(output_count, source_count)
             total_match_element_count += match_count
             total_source_element_count += match_count
+            output_count -= match_count
+            source_count -= match_count
+            if source_count:
+                source_copy[k] = source_count
+            else:
+                # Remove for later for speed (avoid accumulating in _convert step)
+                source_copy.pop(k)
+        # prepare unmatched by type if any left
+        if output_count:
+            elem_type = k[0]
+            unmatched_depth_output[elem_type] = (
+                unmatched_depth_output.get(elem_type, 0) + output_count
+            )
 
-            # update the dictionary by removing already matched values
-            output_copy[k] -= match_count
-            source_copy[k] -= match_count
+    # Fast inline _convert_to_frequency_without_depth for source leftovers only >0
+    unmatched_depth_source: dict[str, int] = {}
+    for (elem_type, _), v in source_copy.items():
+        if v:
+            unmatched_depth_source[elem_type] = unmatched_depth_source.get(elem_type, 0) + v
 
-        # add unmatched leftovers from output_copy to a new dictionary
-        element_type = k[0]
-        if element_type not in unmatched_depth_output:
-            unmatched_depth_output[element_type] = output_copy[k]
-        else:
-            unmatched_depth_output[element_type] += output_copy[k]
-
-    # add unmatched leftovers from source_copy to a new dictionary
-    unmatched_depth_source = _convert_to_frequency_without_depth(source_copy)
-
-    # loop through the source list to match any existing partial match left
-    for k, _ in unmatched_depth_source.items():
-        total_source_element_count += unmatched_depth_source[k]
-        if k in unmatched_depth_output:
-            match_count = min(unmatched_depth_output[k], unmatched_depth_source[k])
+    # Second pass: weighted matches by type (depth-insensitive)
+    for elem_type, v in unmatched_depth_source.items():
+        total_source_element_count += v
+        count_in_output = unmatched_depth_output.get(elem_type)
+        if count_in_output:
+            match_count = min(count_in_output, v)
             total_match_element_count += match_count * category_depth_weight
 
     return min(max(total_match_element_count / total_source_element_count, 0.0), 1.0)
