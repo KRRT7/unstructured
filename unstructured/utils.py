@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import functools
-import importlib
+import importlib.util
 import inspect
 import json
 import os
@@ -12,19 +12,8 @@ import tempfile
 import threading
 from functools import lru_cache, wraps
 from itertools import combinations
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    Callable,
-    Generic,
-    Iterable,
-    Iterator,
-    List,
-    Optional,
-    Tuple,
-    TypeVar,
-    cast,
-)
+from typing import (TYPE_CHECKING, Any, Callable, Generic, Iterable, Iterator,
+                    List, Optional, Tuple, TypeVar, cast)
 
 import requests
 from typing_extensions import ParamSpec, TypeAlias
@@ -230,12 +219,22 @@ def requires_dependencies(
 @lru_cache(maxsize=128)
 def dependency_exists(dependency: str):
     try:
-        importlib.import_module(dependency)
-    except ImportError as e:
-        # Check to make sure this isn't some unrelated import error.
-        if dependency in repr(e):
-            return False
-    return True
+        # Use find_spec to avoid importing the module (which can execute module code
+        # and be expensive). find_spec returns None when the module cannot be found.
+        spec = importlib.util.find_spec(dependency)
+        return spec is not None
+    except Exception:
+        # Be conservative: if find_spec raises for some unexpected reason, fall back
+        # to the slower import attempt to preserve behavior.
+        try:
+            import importlib
+
+            importlib.import_module(dependency)
+        except ImportError as e:
+            # Check to make sure this isn't some unrelated import error.
+            if dependency in repr(e):
+                return False
+        return True
 
 
 def _first_and_remaining_iterator(it: Iterable[_T]) -> Tuple[_T, Iterator[_T]]:
