@@ -8,15 +8,17 @@ class Properties(TypedDict):
     dataType: List[str]
 
 
-exclude_metadata_keys = (
-    "coordinates",
-    "data_source",
-    "detection_class_prob",
-    "emphasized_texts",
-    "is_continuation",
-    "links",
-    "orig_elements",
-    "key_value_pairs",
+exclude_metadata_keys = frozenset(
+    (
+        "coordinates",
+        "data_source",
+        "detection_class_prob",
+        "emphasized_texts",
+        "is_continuation",
+        "links",
+        "orig_elements",
+        "key_value_pairs",
+    )
 )
 
 
@@ -68,15 +70,17 @@ def create_unstructured_weaviate_class(class_name: str = "UnstructuredDocument")
         },
     ]
 
-    for name, annotation in ElementMetadata.__annotations__.items():
-        if name not in exclude_metadata_keys:
-            data_type = _annotation_to_weaviate_data_type(annotation)
-            properties.append(
-                {
-                    "name": name,
-                    "dataType": data_type,
-                },
-            )
+    annotations = getattr(ElementMetadata, "__annotations__", {})
+    for name, annotation in annotations.items():
+        if name in exclude_metadata_keys:
+            continue
+        data_type = _annotation_to_weaviate_data_type(annotation)
+        properties.append(
+            {
+                "name": name,
+                "dataType": data_type,
+            },
+        )
 
     class_dict = {
         "class": class_name,
