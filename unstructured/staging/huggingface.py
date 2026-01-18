@@ -14,10 +14,32 @@ def stage_for_transformers(
     """Stages text elements for transformers pipelines by chunking them into sections that can
     fit into the attention window for the model associated with the tokenizer."""
     chunked_elements: List[Element] = []
+
+    # Pre-extract chunking params for a fast pre-check to avoid unnecessary chunking + deepcopy.
+    buffer: int = chunk_kwargs.get("buffer", 2)
+    max_input_size: Optional[int] = chunk_kwargs.get("max_input_size")
+    max_input_size = tokenizer.model_max_length if max_input_size is None else max_input_size
+
+    if buffer < 0 or buffer >= max_input_size:
+        # Mirror the same validation as chunk_by_attention_window to preserve behavior.
+        raise ValueError(
+            f"buffer is set to {buffer}. Must be greater than zero and smaller than "
+            f"max_input_size, which is {max_input_size}.",
+        )
+
+    max_chunk_size = max_input_size - buffer
+
     for element in elements:
         # NOTE(robinson) - Only chunk potentially lengthy text. Shorter text (like titles)
         # should already fit into the attention window just fine.
         if isinstance(element, (NarrativeText, Text)):
+            # Fast-path: if the total token count of the whole element fits within the chunk
+            # size, avoid the heavier chunking logic and deepcopy.
+            total_tokens = len(tokenizer.tokenize(element.text))
+            if total_tokens <= max_chunk_size:
+                chunked_elements.append(element)
+                continue
+
             chunked_text = chunk_by_attention_window(element.text, tokenizer, **chunk_kwargs)
             for chunk in chunked_text:
                 _chunk_element = deepcopy(element)
@@ -69,6 +91,9 @@ def chunk_by_attention_window(
     chunk_text = ""
     chunk_size = 0
 
+    # Precompute stripped separator once to avoid repeated .strip() calls in the hot path.
+    sep_trimmed = chunk_separator.strip()
+
     for i, segment in enumerate(split_text):
         tokens = tokenizer.tokenize(segment)
         num_tokens = len(tokens)
@@ -82,7 +107,7 @@ def chunk_by_attention_window(
             )
 
         if chunk_size + num_tokens > max_chunk_size:
-            chunks.append(chunk_text + chunk_separator.strip())
+            chunks.append(chunk_text + sep_trimmed)
             chunk_text = ""
             chunk_size = 0
 
