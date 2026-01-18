@@ -1,8 +1,11 @@
+from functools import lru_cache
 from typing import Dict, Optional, Tuple
 
 from rapidfuzz.distance import Levenshtein
 
 from unstructured.cleaners.core import clean_bullets, remove_sentence_punctuation
+
+_INVALID_RETURN_MSG = "Invalid return value type. Expected one of: %s" % (["score", "distance"])
 
 
 def calculate_accuracy(
@@ -56,13 +59,24 @@ def calculate_edit_distance(
     """
     return_types = ["score", "distance"]
     if return_as not in return_types:
-        raise ValueError("Invalid return value type. Expected one of: %s" % return_types)
-    output = standardize_quotes(prepare_str(output, standardize_whitespaces))
-    source = standardize_quotes(prepare_str(source, standardize_whitespaces))
+        # Preserve the original ValueError message exactly
+        raise ValueError(_INVALID_RETURN_MSG)
+
+    # Use cached combined preparation + standardization
+    output = _cached_prepare_and_standardize(output, standardize_whitespaces)
+    source = _cached_prepare_and_standardize(source, standardize_whitespaces)
+
+    # Fast-path when strings are identical to avoid the expensive distance computation
+    if output == source:
+        if return_as == "score":
+            return 1 - 0.0  # same as original computation giving 1.0
+        elif return_as == "distance":
+            return 0.0
+
     distance = Levenshtein.distance(output, source, weights=weights)  # type: ignore
     # lower bounded the char length for source string at 1.0 because to avoid division by zero
     # in the case where source string is empty, the distance should be at 100%
-    source_char_len = max(len(source), 1.0)  # type: ignore
+    source_char_len = len(source) if len(source) != 0 else 1.0  # type: ignore
     bounded_percentage_distance = min(max(distance / source_char_len, 0.0), 1.0)
     if return_as == "score":
         return 1 - bounded_percentage_distance
@@ -249,3 +263,11 @@ def unicode_to_char(unicode_val: str) -> str:
         str: The character corresponding to the Unicode value.
     """
     return chr(int(unicode_val.replace("U+", ""), 16))
+
+
+# Cache the combined prepare_str + standardize_quotes work which was shown to dominate runtime.
+# A modest maxsize prevents unbounded memory growth while giving good hit rates in repeated-use scenarios.
+@lru_cache(maxsize=2048)
+def _cached_prepare_and_standardize(s: Optional[str], standardize_whitespaces: bool) -> str:
+    # Note: calling the original functions as before to preserve behavior
+    return standardize_quotes(prepare_str(s, standardize_whitespaces))
