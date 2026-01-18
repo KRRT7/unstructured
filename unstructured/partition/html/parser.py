@@ -105,6 +105,8 @@ from unstructured.partition.text_type import (
 )
 from unstructured.utils import lazyproperty
 
+Annotation: TypeAlias = Mapping[str, Any]
+
 # ------------------------------------------------------------------------------------------------
 # DOMAIN MODEL
 # ------------------------------------------------------------------------------------------------
@@ -207,13 +209,13 @@ class _PhraseAccumulator:
     def flush(self) -> Iterator[Phrase]:
         """Generate each of the stored `TextSegment` objects and clears the accumulator."""
         # -- harvest accumulated text-segments and empty the accumulator --
-        text_segments = self._text_segments[:]
+        text_segments = tuple(self._text_segments)
         self._text_segments.clear()
 
         if not text_segments:
             return
 
-        yield tuple(text_segments)
+        yield text_segments
 
 
 class _ElementAccumulator:
