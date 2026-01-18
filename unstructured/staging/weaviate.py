@@ -31,10 +31,11 @@ def stage_for_weaviate(elements: List[Text]) -> List[Dict[str, Any]]:
     """
     data: List[Dict[str, Any]] = []
     for element in elements:
-        properties = element.metadata.to_dict()
-        for k in exclude_metadata_keys:
-            if k in properties:
-                del properties[k]
+        props = element.metadata.to_dict()
+        # Build a properties dict excluding keys to remove, avoiding repeated deletions.
+        properties: Dict[str, Any] = {
+            k: v for k, v in props.items() if k not in exclude_metadata_keys
+        }
         properties["text"] = element.text
         properties["category"] = element.category
         data.append(properties)
