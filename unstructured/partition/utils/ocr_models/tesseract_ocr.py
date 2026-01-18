@@ -52,8 +52,9 @@ class OCRAgentTesseract(OCRAgent):
 
         trace_logger.detail("Processing entire page OCR with tesseract...")
         zoom = 1
+        image_array = np.array(image)
         ocr_df: pd.DataFrame = self.image_to_data_with_character_confidence_filter(
-            np.array(image),
+            image_array,
             lang=self.language,
             character_confidence_threshold=env_config.TESSERACT_CHARACTER_CONFIDENCE_THRESHOLD,
         )
@@ -81,8 +82,9 @@ class OCRAgentTesseract(OCRAgent):
                 np.round(env_config.TESSERACT_OPTIMUM_TEXT_HEIGHT / text_height, 1),
                 max_zoom,
             )
+            zoomed_image_array = _zoom_image_array(image_array, zoom)
             ocr_df = self.image_to_data_with_character_confidence_filter(
-                np.array(zoom_image(image, zoom)),
+                zoomed_image_array,
                 lang=self.language,
                 character_confidence_threshold=env_config.TESSERACT_CHARACTER_CONFIDENCE_THRESHOLD,
             )
@@ -258,3 +260,12 @@ def zoom_image(image: PILImage.Image, zoom: float = 1) -> PILImage.Image:
     # Skip dilation and erosion for 1x1 kernel as they are no-ops
 
     return PILImage.fromarray(new_image)
+
+
+def _zoom_image_array(image_array: np.ndarray, zoom: float) -> np.ndarray:
+    """Zoom image array without converting to PIL Image to avoid redundant conversions."""
+    if zoom <= 0:
+        zoom = 1
+    bgr = cv2.cvtColor(image_array, cv2.COLOR_RGB2BGR)
+    zoomed = cv2.resize(bgr, None, fx=zoom, fy=zoom, interpolation=cv2.INTER_CUBIC)
+    return zoomed
