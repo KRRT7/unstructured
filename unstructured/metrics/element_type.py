@@ -29,14 +29,12 @@ def get_element_type_frequency(
     frequency: dict[tuple[str, int | None], int] = {}
     if len(elements) == 0:
         return frequency
-    for element in json.loads(elements):
+    data = json.loads(elements)
+    for element in data:
         type = element.get("type")
         category_depth = element["metadata"].get("category_depth")
         key = (type, category_depth)
-        if key not in frequency:
-            frequency[key] = 1
-        else:
-            frequency[key] += 1
+        frequency[key] = frequency.get(key, 0) + 1
     return frequency
 
 
