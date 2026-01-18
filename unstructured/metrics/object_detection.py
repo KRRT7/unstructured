@@ -232,11 +232,9 @@ class ObjectDetectionEvalProcessor:
         """
         Process the page dimensions from the json file to the required format.
         """
-        pages_height = []
-        pages_width = []
-        for page in data["pages"]:
-            pages_height.append(page["size"]["height"])
-            pages_width.append(page["size"]["width"])
+        pages = data["pages"]
+        pages_height = [page["size"]["height"] for page in pages]
+        pages_width = [page["size"]["width"] for page in pages]
         return pages_height, pages_width
 
     @staticmethod
