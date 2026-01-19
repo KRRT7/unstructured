@@ -1,3 +1,4 @@
+from functools import lru_cache
 from typing import Dict, Optional, Tuple
 
 from rapidfuzz.distance import Levenshtein
@@ -172,6 +173,28 @@ def standardize_quotes(text: str) -> str:
     Returns:
         str: The text with standardized quotes.
     """
+    trans = _build_translation_table()
+    return text.translate(trans)
+
+
+def unicode_to_char(unicode_val: str) -> str:
+    """
+    Converts a Unicode value to a character.
+
+    Args:
+        unicode_val (str): The Unicode value to convert.
+
+    Returns:
+        str: The character corresponding to the Unicode value.
+    """
+    return chr(int(unicode_val.replace("U+", ""), 16))
+
+
+@lru_cache(maxsize=None)
+def _build_translation_table() -> dict[int, int]:
+    double_quote_standard = '"'
+    single_quote_standard = "'"
+
     # Double Quotes Dictionary
     double_quotes = {
         '"': "U+0022",  # noqa 601 # Standard typewriter/programmer's quote
@@ -220,32 +243,14 @@ def standardize_quotes(text: str) -> str:
         "｣": "U+FF63",  # HALFWIDTH RIGHT CORNER BRACKET
     }
 
-    double_quote_standard = '"'
-    single_quote_standard = "'"
+    trans: dict[int, int] = {}
 
-    # Apply double quote replacements
     for unicode_val in double_quotes.values():
         unicode_char = unicode_to_char(unicode_val)
-        if unicode_char in text:
-            text = text.replace(unicode_char, double_quote_standard)
+        trans[ord(unicode_char)] = ord(double_quote_standard)
 
-    # Apply single quote replacements
     for unicode_val in single_quotes.values():
         unicode_char = unicode_to_char(unicode_val)
-        if unicode_char in text:
-            text = text.replace(unicode_char, single_quote_standard)
+        trans[ord(unicode_char)] = ord(single_quote_standard)
 
-    return text
-
-
-def unicode_to_char(unicode_val: str) -> str:
-    """
-    Converts a Unicode value to a character.
-
-    Args:
-        unicode_val (str): The Unicode value to convert.
-
-    Returns:
-        str: The character corresponding to the Unicode value.
-    """
-    return chr(int(unicode_val.replace("U+", ""), 16))
+    return trans
