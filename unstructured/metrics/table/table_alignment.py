@@ -1,4 +1,5 @@
 import difflib
+from collections import deque
 from typing import Any, Dict, List
 
 import numpy as np
@@ -104,55 +105,62 @@ class TableAlignment:
             total_element_count = 0
             # Get row and col index accuracy
             ground_truth_td_contents_list = [gtd["content"].lower() for gtd in ground_truth_td]
-            used_indices = set()
-            indices_tuple_pairs = []
+            unique_to_indices: Dict[str, List[int]] = {}
+            for i, s in enumerate(ground_truth_td_contents_list):
+                unique_to_indices.setdefault(s, []).append(i)
+
+            # Maintain deques of available indices for each unique content to avoid repeated list scans.
+            available_indices: Dict[str, deque] = {
+                k: deque(v) for k, v in unique_to_indices.items()
+            }
+            unique_keys_list = list(unique_to_indices.keys())
+
+            # BUG FIX: the previous matched_idx will only output the first matched index if
+            # the match has duplicates in the
+            # ground_truth_td_contents_list, the current fix will output its correspondence idx
+            # once matching is exhausted, it will go back search again the same fashion
             for td_ele in td:
                 content = td_ele["content"].lower()
                 row_index = td_ele["row_index"]
                 col_idx = td_ele["col_index"]
 
-                matches = difflib.get_close_matches(
-                    content,
-                    ground_truth_td_contents_list,
-                    cutoff=cutoff,
-                    n=1,
-                )
-                # BUG FIX: the previous matched_idx will only output the first matched index if
-                # the match has duplicates in the
-                # ground_truth_td_contents_list, the current fix will output its correspondence idx
-                # once matching is exhausted, it will go back search again the same fashion
-                matching_indices = []
-                if matches != []:
-                    b_indices = [
-                        i
-                        for i, b_string in enumerate(ground_truth_td_contents_list)
-                        if b_string == matches[0] and i not in used_indices
-                    ]
-                    if not b_indices:
-                        # If all indices are used, reset used_indices and use the first index
-                        used_indices.clear()
-                        b_indices = [
-                            i
-                            for i, b_string in enumerate(ground_truth_td_contents_list)
-                            if b_string == matches[0] and i not in used_indices
-                        ]
-                    matching_index = b_indices[0]
-                    matching_indices.append(matching_index)
-                    used_indices.add(matching_index)
+                matched_idx = -1
+
+                # Fast-path exact match against unique keys.
+                if content in available_indices:
+                    if available_indices[content]:
+                        matched_idx = available_indices[content].popleft()
+                    else:
+                        # If all indices for this content were used, reset all available deques and use first index.
+                        available_indices = {k: deque(v) for k, v in unique_to_indices.items()}
+                        matched_idx = available_indices[content].popleft()
                 else:
-                    matching_indices = [-1]
-                matched_idx = matching_indices[0]
+                    # Fall back to approximate match but only against unique keys (reduces comparisons).
+                    matches = difflib.get_close_matches(
+                        content,
+                        unique_keys_list,
+                        cutoff=cutoff,
+                        n=1,
+                    )
+                    if matches:
+                        matched_key = matches[0]
+                        if available_indices.get(matched_key) and available_indices[matched_key]:
+                            matched_idx = available_indices[matched_key].popleft()
+                        else:
+                            # Reset when indices for this matched key are exhausted.
+                            available_indices = {k: deque(v) for k, v in unique_to_indices.items()}
+                            matched_idx = available_indices[matched_key].popleft()
+                    else:
+                        matched_idx = -1
+
                 if matched_idx >= 0:
                     gt_row_index = ground_truth_td[matched_idx]["row_index"]
                     gt_col_index = ground_truth_td[matched_idx]["col_index"]
-                    indices_tuple_pairs.append(((row_index, col_idx), (gt_row_index, gt_col_index)))
-
-            for indices_tuple_pair in indices_tuple_pairs:
-                if indices_tuple_pair[0][0] == indices_tuple_pair[1][0]:
-                    aligned_element_row_count += 1
-                if indices_tuple_pair[0][1] == indices_tuple_pair[1][1]:
-                    aligned_element_col_count += 1
-                total_element_count += 1
+                    total_element_count += 1
+                    if row_index == gt_row_index:
+                        aligned_element_row_count += 1
+                    if col_idx == gt_col_index:
+                        aligned_element_col_count += 1
 
             table_col_index_acc = 0
             table_row_index_acc = 0
