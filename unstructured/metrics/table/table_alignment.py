@@ -56,6 +56,30 @@ class TableAlignment:
         return df
 
     @staticmethod
+    def _find_unused_position(
+        positions: List[int], used_indices: set
+    ) -> tuple[int, set]:
+        """Find the first unused position in the positions list.
+
+        Args:
+            positions: List of candidate position indices.
+            used_indices: Set of already used indices.
+
+        Returns:
+            Tuple of (matched_idx, updated_used_indices).
+            If all positions are used, resets used_indices and returns the first position.
+        """
+        for pos in positions:
+            if pos not in used_indices:
+                used_indices.add(pos)
+                return pos, used_indices
+
+        # If all indices are used, reset used_indices and use the first index
+        used_indices.clear()
+        used_indices.add(positions[0])
+        return positions[0], used_indices
+
+    @staticmethod
     def get_element_level_alignment(
         predicted_table_data: List[List[Dict[str, Any]]],
         ground_truth_table_data: List[List[Dict[str, Any]]],
@@ -104,55 +128,53 @@ class TableAlignment:
             total_element_count = 0
             # Get row and col index accuracy
             ground_truth_td_contents_list = [gtd["content"].lower() for gtd in ground_truth_td]
+            ground_map: Dict[str, List[int]] = {}
+            unique_ground_list: List[str] = []
+            for i, s in enumerate(ground_truth_td_contents_list):
+                if s in ground_map:
+                    ground_map[s].append(i)
+                else:
+                    ground_map[s] = [i]
+                    unique_ground_list.append(s)
+
             used_indices = set()
-            indices_tuple_pairs = []
             for td_ele in td:
                 content = td_ele["content"].lower()
                 row_index = td_ele["row_index"]
                 col_idx = td_ele["col_index"]
 
-                matches = difflib.get_close_matches(
-                    content,
-                    ground_truth_td_contents_list,
-                    cutoff=cutoff,
-                    n=1,
-                )
-                # BUG FIX: the previous matched_idx will only output the first matched index if
-                # the match has duplicates in the
-                # ground_truth_td_contents_list, the current fix will output its correspondence idx
-                # once matching is exhausted, it will go back search again the same fashion
-                matching_indices = []
-                if matches != []:
-                    b_indices = [
-                        i
-                        for i, b_string in enumerate(ground_truth_td_contents_list)
-                        if b_string == matches[0] and i not in used_indices
-                    ]
-                    if not b_indices:
-                        # If all indices are used, reset used_indices and use the first index
-                        used_indices.clear()
-                        b_indices = [
-                            i
-                            for i, b_string in enumerate(ground_truth_td_contents_list)
-                            if b_string == matches[0] and i not in used_indices
-                        ]
-                    matching_index = b_indices[0]
-                    matching_indices.append(matching_index)
-                    used_indices.add(matching_index)
+                matched_idx = -1
+
+                # Prefer exact matches (fast path) before fuzzy matching
+                positions = ground_map.get(content)
+                if positions is not None:
+                    matched_idx, used_indices = TableAlignment._find_unused_position(
+                        positions, used_indices
+                    )
                 else:
-                    matching_indices = [-1]
-                matched_idx = matching_indices[0]
+                    # Fallback to fuzzy matching on unique ground list (much smaller than full list)
+                    matches = difflib.get_close_matches(
+                        content,
+                        unique_ground_list,
+                        cutoff=cutoff,
+                        n=1,
+                    )
+                    if matches:
+                        match_str = matches[0]
+                        positions = ground_map[match_str]
+                        matched_idx, used_indices = TableAlignment._find_unused_position(
+                            positions, used_indices
+                        )
+
                 if matched_idx >= 0:
                     gt_row_index = ground_truth_td[matched_idx]["row_index"]
                     gt_col_index = ground_truth_td[matched_idx]["col_index"]
-                    indices_tuple_pairs.append(((row_index, col_idx), (gt_row_index, gt_col_index)))
-
-            for indices_tuple_pair in indices_tuple_pairs:
-                if indices_tuple_pair[0][0] == indices_tuple_pair[1][0]:
-                    aligned_element_row_count += 1
-                if indices_tuple_pair[0][1] == indices_tuple_pair[1][1]:
-                    aligned_element_col_count += 1
-                total_element_count += 1
+                    # Update alignment counters immediately
+                    if row_index == gt_row_index:
+                        aligned_element_row_count += 1
+                    if col_idx == gt_col_index:
+                        aligned_element_col_count += 1
+                    total_element_count += 1
 
             table_col_index_acc = 0
             table_row_index_acc = 0
@@ -163,8 +185,9 @@ class TableAlignment:
             col_index_acc.append(table_col_index_acc)
             row_index_acc.append(table_row_index_acc)
 
+        matched_set = set(matched_indices)
         not_found_gt_table_indexes = [
-            id for id in range(len(ground_truth_table_data)) if id not in matched_indices
+            id for id in range(len(ground_truth_table_data)) if id not in matched_set
         ]
         for _ in not_found_gt_table_indexes:
             content_diff_cols.append(0)
