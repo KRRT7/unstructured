@@ -172,10 +172,16 @@ def _merge_extracted_that_are_subregion_of_inferred_text(
         inferred_to_iter[inferred_index] = False
         # then expand inferred box by all the extracted boxes
         # FIXME (yao): this part is broken at the moment
-        inferred_layout.element_coords[[inferred_index]] = _minimum_containing_coords(
-            inferred_layout.slice([inferred_index]),
-            *[extracted_layout.slice([match]) for match in matches],
-        )
+        # Avoid calling slice for each match: operate directly on coordinate arrays.
+        inf_coord = inferred_layout.element_coords[inferred_index]  # shape (4,)
+        ext_coords = extracted_layout.element_coords[matches]  # shape (k,4)
+        if ext_coords.size:
+            # compute min x1/y1 and max x2/y2 across inf + matched extracted boxes
+            x1 = min(inf_coord[0], float(np.min(ext_coords[:, 0])))
+            y1 = min(inf_coord[1], float(np.min(ext_coords[:, 1])))
+            x2 = max(inf_coord[2], float(np.max(ext_coords[:, 2])))
+            y2 = max(inf_coord[3], float(np.max(ext_coords[:, 3])))
+            inferred_layout.element_coords[[inferred_index]] = np.array([[x1, y1, x2, y2]])
     inferred_to_proc[inferred_to_proc] = inferred_to_iter
     extracted_to_proc[extracted_to_proc] = extracted_to_iter
     return inferred_layout
