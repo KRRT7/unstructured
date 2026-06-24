@@ -4,22 +4,29 @@ import tempfile
 import zlib
 from typing import BinaryIO, List, Mapping, Optional, Tuple, Union
 
-from pdfminer import settings as pdfminer_settings
-from pdfminer.cmapdb import CMap, CMapDB
-from pdfminer.converter import PDFPageAggregator
-from pdfminer.layout import LAParams, LTChar, LTContainer, LTImage, LTItem, LTTextLine
-from pdfminer.pdffont import PDFCIDFont, PDFFontError
-from pdfminer.pdfinterp import LITERAL_FONT, PDFPageInterpreter, PDFResourceManager
-from pdfminer.pdfpage import PDFPage
-from pdfminer.pdftypes import (
+from core_pdf.compat.pdfminer import settings as pdfminer_settings
+from core_pdf.compat.pdfminer.cmapdb import CMap, CMapDB
+from core_pdf.compat.pdfminer.converter import PDFPageAggregator
+from core_pdf.compat.pdfminer.layout import (
+    LAParams,
+    LTChar,
+    LTContainer,
+    LTImage,
+    LTItem,
+    LTTextLine,
+)
+from core_pdf.compat.pdfminer.pdffont import PDFCIDFont, PDFFontError
+from core_pdf.compat.pdfminer.pdfinterp import LITERAL_FONT, PDFPageInterpreter, PDFResourceManager
+from core_pdf.compat.pdfminer.pdfpage import PDFPage
+from core_pdf.compat.pdfminer.pdftypes import (
     LITERALS_ASCII85_DECODE,
     LITERALS_ASCIIHEX_DECODE,
     LITERALS_FLATE_DECODE,
     PDFStream,
     resolve1,
 )
-from pdfminer.psexceptions import PSSyntaxError
-from pdfminer.psparser import literal_name
+from core_pdf.compat.pdfminer.psexceptions import PSSyntaxError
+from core_pdf.compat.pdfminer.psparser import literal_name
 from pydantic import BaseModel
 
 from unstructured.logger import logger
@@ -185,11 +192,11 @@ def _decode_pdfstream_with_limit(stream: PDFStream, max_decoded_bytes: int) -> O
                 return None
             data = result
         elif filt in LITERALS_ASCII85_DECODE:
-            from pdfminer.ascii85 import ascii85decode
+            from core_pdf.compat.pdfminer.ascii85 import ascii85decode
 
             data = ascii85decode(data)
         elif filt in LITERALS_ASCIIHEX_DECODE:
-            from pdfminer.ascii85 import asciihexdecode
+            from core_pdf.compat.pdfminer.ascii85 import asciihexdecode
 
             data = asciihexdecode(data)
         else:

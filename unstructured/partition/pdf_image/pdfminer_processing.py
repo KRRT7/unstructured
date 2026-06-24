@@ -5,9 +5,10 @@ import os
 from typing import TYPE_CHECKING, Any, BinaryIO, Iterable, List, Optional, Union, cast
 
 import numpy as np
-from pdfminer.layout import LAParams, LTChar, LTContainer, LTTextBox
-from pdfminer.pdftypes import PDFObjRef
-from pdfminer.utils import decode_text, open_filename
+from core_pdf.compat.pdfminer.layout import LAParams, LTChar, LTContainer, LTTextBox
+from core_pdf.compat.pdfminer.pdftypes import PDFObjRef
+from core_pdf.compat.pdfminer.utils import decode_text, open_filename
+from pdfminer.unstructured import iter_unstructured_region_layouts
 from unstructured_inference.config import inference_config
 from unstructured_inference.constants import FULL_PAGE_REGION_THRESHOLD, IsExtracted
 from unstructured_inference.inference.elements import Rectangle
@@ -583,6 +584,92 @@ def process_data_with_pdfminer(
 
     from unstructured_inference.inference.layoutelement import LayoutElements
 
+    try:
+        return process_data_with_core_pdf_native(
+            file=file,
+            dpi=dpi,
+            password=password,
+            rotation_corrections=rotation_corrections,
+        )
+    except Exception:
+        return process_data_with_pdfminer_compat(
+            file=file,
+            dpi=dpi,
+            password=password,
+            pdfminer_config=pdfminer_config,
+            rotation_corrections=rotation_corrections,
+        )
+
+
+@requires_dependencies("unstructured_inference")
+def process_data_with_core_pdf_native(
+    file: Optional[Union[bytes, BinaryIO]] = None,
+    dpi: int = env_config.PDF_RENDER_DPI,
+    password: Optional[str] = None,
+    rotation_corrections: Optional[List[int]] = None,
+) -> tuple[List[LayoutElements], List[List]]:
+    """Loads word objects using core-pdf's native unstructured layout records."""
+
+    from unstructured_inference.inference.layoutelement import LayoutElements
+
+    layouts = []
+    layouts_links = []
+    coef = dpi / 72
+    for page_index, page_layout in enumerate(
+        iter_unstructured_region_layouts(file, password=password or "")
+    ):
+        width, height = page_layout.width, page_layout.height
+        layout, urls_metadata = process_page_layout_from_core_pdf_native(
+            page_layout,
+            height,
+            page_index,
+            coef,
+        )
+
+        angle = (
+            rotation_corrections[page_index]
+            if rotation_corrections is not None and page_index < len(rotation_corrections)
+            else 0
+        )
+        if angle:
+            layout.element_coords = _rotate_bboxes(
+                layout.element_coords, angle, width * coef, height * coef
+            )
+
+        links = []
+        for metadata in urls_metadata:
+            bbox = [x * coef for x in metadata["bbox"]]
+            if angle:
+                bbox = _rotate_bboxes(
+                    np.array([bbox], dtype=float), angle, width * coef, height * coef
+                )[0].tolist()
+            links.append(
+                {
+                    "bbox": bbox,
+                    "text": metadata["text"],
+                    "url": metadata["uri"],
+                    "start_index": metadata["start_index"],
+                }
+            )
+
+        layout = _clean_and_sort_pdfminer_layout(layout)
+        layouts.append(layout)
+        layouts_links.append(links)
+    return layouts, layouts_links
+
+
+@requires_dependencies("unstructured_inference")
+def process_data_with_pdfminer_compat(
+    file: Optional[Union[bytes, BinaryIO]] = None,
+    dpi: int = env_config.PDF_RENDER_DPI,
+    password: Optional[str] = None,
+    pdfminer_config: Optional[PDFMinerConfig] = None,
+    rotation_corrections: Optional[List[int]] = None,
+) -> tuple[List[LayoutElements], List[List]]:
+    """Loads the image and word objects through the pdfminer-compatible core-pdf surface."""
+
+    from unstructured_inference.inference.layoutelement import LayoutElements
+
     layouts = []
     layouts_links = []
     # Coefficient to rescale bounding box to be compatible with images
@@ -634,32 +721,101 @@ def process_data_with_pdfminer(
                 }
             )
 
-        clean_layouts = []
-        for threshold, element_class in zip(
-            (
-                env_config.EMBEDDED_TEXT_SAME_REGION_THRESHOLD,
-                env_config.EMBEDDED_IMAGE_SAME_REGION_THRESHOLD,
-            ),
-            (0, 1),
-        ):
-            elements_to_sort = layout.slice(layout.element_class_ids == element_class)
-            clean_layouts.append(
-                remove_duplicate_elements(elements_to_sort, threshold)
-                if len(elements_to_sort)
-                else elements_to_sort
-            )
-
-        layout = LayoutElements.concatenate(clean_layouts)
-        # NOTE(christine): always do the basic sort first for deterministic order across
-        # python versions.
-        layout = sort_text_regions(layout, SORT_MODE_BASIC)
-
-        # apply the current default sorting to the layout elements extracted by pdfminer
-        layout = sort_text_regions(layout)
+        layout = _clean_and_sort_pdfminer_layout(layout)
 
         layouts.append(layout)
         layouts_links.append(links)
     return layouts, layouts_links
+
+
+@requires_dependencies("unstructured_inference")
+def process_page_layout_from_core_pdf_native(
+    page_layout,
+    page_height: int | float,
+    page_number: int,
+    coord_coef: float,
+) -> tuple[LayoutElements, list]:
+    from unstructured_inference.inference.layoutelement import LayoutElements
+
+    annotation_list = [
+        {
+            "bbox": rect_to_bbox(link.bbox, page_height),
+            "type": f"/'{link.link_type}'" if link.link_type else None,
+            "uri": link.url,
+            "page_number": page_number,
+        }
+        for link in page_layout.links
+    ]
+    urls_metadata: list[dict[str, Any]] = []
+    element_coords, texts, element_class = [], [], []
+    is_extracted = []
+    annotation_threshold = env_config.PDF_ANNOTATION_THRESHOLD
+
+    for region in page_layout.regions:
+        bbox = rect_to_bbox(region.bbox, page_height)
+        if not _validate_bbox(bbox):
+            continue
+        words = _get_words_from_core_pdf_regions((region,), page_height)
+        for annot in check_annotations_within_element(
+            annotation_list,
+            bbox,
+            page_number,
+            annotation_threshold,
+        ):
+            urls_metadata.append(map_bbox_and_index(words, annot))
+        texts.append(region.text)
+        element_coords.append(bbox)
+        element_class.append(0)
+        is_extracted.append(IsExtracted.TRUE if region.visible else None)
+
+    return (
+        LayoutElements(
+            element_coords=coord_coef * np.array(element_coords),
+            texts=np.array(texts).astype(object),
+            element_class_ids=np.array(element_class),
+            element_class_id_map={0: ElementType.UNCATEGORIZED_TEXT, 1: ElementType.IMAGE},
+            sources=np.array([Source.PDFMINER] * len(element_class)),
+            is_extracted_array=np.array(is_extracted),
+        ),
+        urls_metadata,
+    )
+
+
+def _get_words_from_core_pdf_regions(regions, height: float) -> list[dict[str, Any]]:
+    words: list[dict[str, Any]] = []
+    for region in regions:
+        for word in region.words:
+            words.append(
+                {
+                    "text": word.text,
+                    "bbox": rect_to_bbox(word.bbox, height),
+                    "start_index": word.start_index,
+                }
+            )
+    return words
+
+
+@requires_dependencies("unstructured_inference")
+def _clean_and_sort_pdfminer_layout(layout: LayoutElements) -> LayoutElements:
+    from unstructured_inference.inference.layoutelement import LayoutElements
+
+    clean_layouts = []
+    for threshold, element_class in zip(
+        (
+            env_config.EMBEDDED_TEXT_SAME_REGION_THRESHOLD,
+            env_config.EMBEDDED_IMAGE_SAME_REGION_THRESHOLD,
+        ),
+        (0, 1),
+    ):
+        elements_to_sort = layout.slice(layout.element_class_ids == element_class)
+        clean_layouts.append(
+            remove_duplicate_elements(elements_to_sort, threshold) if len(elements_to_sort) else elements_to_sort
+        )
+
+    layout = LayoutElements.concatenate(clean_layouts)
+    # NOTE(christine): always do the basic sort first for deterministic order across python versions.
+    layout = sort_text_regions(layout, SORT_MODE_BASIC)
+    return sort_text_regions(layout)
 
 
 def _create_text_region(x1, y1, x2, y2, coef, text, source, region_class):
@@ -1259,7 +1415,8 @@ def get_words_from_obj(
         start_index = 0
         last_char: LTChar | None = None  # Track last character for deduplication
 
-        for index, character in enumerate(text_line):
+        line_text_len = 0
+        for character in text_line:
             if isinstance(character, LTChar):
                 # Skip duplicate characters (fake bold fix)
                 if (
@@ -1292,7 +1449,7 @@ def get_words_from_obj(
                     word = ""
 
                 if len(word) == 0:
-                    start_index = text_len + index
+                    start_index = text_len + line_text_len
                     x1 = character.x0
                     y2 = height - character.y0
                     x2 = character.x1
@@ -1302,13 +1459,21 @@ def get_words_from_obj(
                     y2 = height - character.y0
 
                 word += char
+                line_text_len += len(char)
             else:
                 # Non-LTChar items (e.g., LTAnno) act as word boundaries
-                words.append(
-                    {"text": word, "bbox": (x1, y1, x2, y2), "start_index": start_index},
-                )
+                if word:
+                    words.append(
+                        {"text": word, "bbox": (x1, y1, x2, y2), "start_index": start_index},
+                    )
                 word = ""
-        text_len += len(text_line)
+                if hasattr(character, "get_text"):
+                    line_text_len += len(character.get_text())
+        if word:
+            words.append(
+                {"text": word, "bbox": (x1, y1, x2, y2), "start_index": start_index},
+            )
+        text_len += line_text_len
     return characters, words
 
 

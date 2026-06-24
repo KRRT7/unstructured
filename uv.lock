@@ -32,6 +32,7 @@ constraints = [
     { name = "urllib3", specifier = ">=2.0.0" },
     { name = "weaviate-client", specifier = ">=4.20.1" },
 ]
+excludes = ["pdfminer-six"]
 
 [[package]]
 name = "accelerate"
@@ -1052,6 +1053,20 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/0a/59/ebfb8c677c75605cc27f7122c90313fd2f375ff3c8d19a1694bda74aaa63/contourpy-1.3.3-pp311-pypy311_pp73-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:70f9aad7de812d6541d29d2bbf8feb22ff7e1c299523db288004e3157ff4674e", size = 302202, upload-time = "2025-07-26T12:02:55.947Z" },
     { url = "https://files.pythonhosted.org/packages/3c/37/21972a15834d90bfbfb009b9d004779bd5a07a0ec0234e5ba8f64d5736f4/contourpy-1.3.3-pp311-pypy311_pp73-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:5ed3657edf08512fc3fe81b510e35c2012fbd3081d2e26160f27ca28affec989", size = 329207, upload-time = "2025-07-26T12:02:57.468Z" },
     { url = "https://files.pythonhosted.org/packages/0c/58/bd257695f39d05594ca4ad60df5bcb7e32247f9951fd09a9b8edb82d1daa/contourpy-1.3.3-pp311-pypy311_pp73-win_amd64.whl", hash = "sha256:3d1a3799d62d45c18bafd41c5fa05120b96a28079f2393af559b843d1a966a77", size = 225315, upload-time = "2025-07-26T12:02:58.801Z" },
+]
+
+[[package]]
+name = "core-pdf"
+version = "0.0.0"
+source = { editable = "core-pdf" }
+
+[package.metadata]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=9.1.0" },
+    { name = "pytest-cov", specifier = ">=7.0.0" },
+    { name = "ty", specifier = ">=0.0.51" },
 ]
 
 [[package]]
@@ -4328,19 +4343,6 @@ wheels = [
 ]
 
 [[package]]
-name = "pdfminer-six"
-version = "20260107"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "charset-normalizer" },
-    { name = "cryptography" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/34/a4/5cec1112009f0439a5ca6afa8ace321f0ab2f48da3255b7a1c8953014670/pdfminer_six-20260107.tar.gz", hash = "sha256:96bfd431e3577a55a0efd25676968ca4ce8fd5b53f14565f85716ff363889602", size = 8512094, upload-time = "2026-01-07T13:29:12.937Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/20/8b/28c4eaec9d6b036a52cb44720408f26b1a143ca9bce76cc19e8f5de00ab4/pdfminer_six-20260107-py3-none-any.whl", hash = "sha256:366585ba97e80dffa8f00cebe303d2f381884d8637af4ce422f1df3ef38111a9", size = 6592252, upload-time = "2026-01-07T13:29:10.742Z" },
-]
-
-[[package]]
 name = "pexpect"
 version = "4.9.0"
 source = { registry = "https://pypi.org/simple" }
@@ -7244,6 +7246,7 @@ dependencies = [
 
 [package.optional-dependencies]
 all-docs = [
+    { name = "core-pdf" },
     { name = "google-cloud-vision" },
     { name = "markdown" },
     { name = "msoffcrypto-tool" },
@@ -7252,7 +7255,6 @@ all-docs = [
     { name = "openpyxl" },
     { name = "pandas" },
     { name = "pdf2image" },
-    { name = "pdfminer-six" },
     { name = "pi-heif" },
     { name = "pikepdf" },
     { name = "pypandoc-binary", marker = "python_full_version < '3.13' or sys_platform != 'win32'" },
@@ -7287,9 +7289,9 @@ huggingface = [
     { name = "transformers" },
 ]
 image = [
+    { name = "core-pdf" },
     { name = "google-cloud-vision" },
     { name = "pdf2image" },
-    { name = "pdfminer-six" },
     { name = "pi-heif" },
     { name = "pikepdf" },
     { name = "pypdf" },
@@ -7300,6 +7302,7 @@ ingest = [
     { name = "unstructured-ingest", extra = ["airtable", "astradb", "azure", "azure-ai-search", "bedrock", "biomed", "box", "chroma", "confluence", "couchbase", "databricks-volumes", "delta-table", "discord", "dropbox", "elasticsearch", "gcs", "github", "gitlab", "google-drive", "hubspot", "huggingface", "jira", "kafka", "kdbai", "milvus", "mongodb", "notion", "octoai", "onedrive", "openai", "opensearch", "outlook", "pinecone", "postgres", "qdrant", "reddit", "remote", "s3", "salesforce", "sftp", "sharepoint", "singlestore", "slack", "vectara", "vertexai", "voyageai", "weaviate", "wikipedia"], marker = "python_full_version < '3.13' or sys_platform != 'win32'" },
 ]
 local-inference = [
+    { name = "core-pdf" },
     { name = "google-cloud-vision" },
     { name = "markdown" },
     { name = "msoffcrypto-tool" },
@@ -7308,7 +7311,6 @@ local-inference = [
     { name = "openpyxl" },
     { name = "pandas" },
     { name = "pdf2image" },
-    { name = "pdfminer-six" },
     { name = "pi-heif" },
     { name = "pikepdf" },
     { name = "pypandoc-binary", marker = "python_full_version < '3.13' or sys_platform != 'win32'" },
@@ -7334,9 +7336,9 @@ paddleocr = [
     { name = "unstructured-paddleocr" },
 ]
 pdf = [
+    { name = "core-pdf" },
     { name = "google-cloud-vision" },
     { name = "pdf2image" },
-    { name = "pdfminer-six" },
     { name = "pi-heif" },
     { name = "pikepdf" },
     { name = "pypdf" },
@@ -7400,6 +7402,10 @@ test = [
 requires-dist = [
     { name = "beautifulsoup4", specifier = ">=4.14.3,<5.0.0" },
     { name = "charset-normalizer", specifier = ">=3.4.4,<4.0.0" },
+    { name = "core-pdf", marker = "extra == 'all-docs'", editable = "core-pdf" },
+    { name = "core-pdf", marker = "extra == 'image'", editable = "core-pdf" },
+    { name = "core-pdf", marker = "extra == 'local-inference'", editable = "core-pdf" },
+    { name = "core-pdf", marker = "extra == 'pdf'", editable = "core-pdf" },
     { name = "emoji", specifier = ">=2.15.0,<3.0.0" },
     { name = "filelock", specifier = ">=3.12.0,<4.0.0" },
     { name = "filetype", specifier = ">=1.2.0,<2.0.0" },
@@ -7439,10 +7445,6 @@ requires-dist = [
     { name = "pdf2image", marker = "extra == 'image'", specifier = ">=1.17.0,<2.0.0" },
     { name = "pdf2image", marker = "extra == 'local-inference'", specifier = ">=1.17.0,<2.0.0" },
     { name = "pdf2image", marker = "extra == 'pdf'", specifier = ">=1.17.0,<2.0.0" },
-    { name = "pdfminer-six", marker = "extra == 'all-docs'", specifier = ">=20251230,<20270000" },
-    { name = "pdfminer-six", marker = "extra == 'image'", specifier = ">=20251230,<20270000" },
-    { name = "pdfminer-six", marker = "extra == 'local-inference'", specifier = ">=20251230,<20270000" },
-    { name = "pdfminer-six", marker = "extra == 'pdf'", specifier = ">=20251230,<20270000" },
     { name = "pi-heif", marker = "extra == 'all-docs'", specifier = ">=1.2.0,<2.0.0" },
     { name = "pi-heif", marker = "extra == 'image'", specifier = ">=1.2.0,<2.0.0" },
     { name = "pi-heif", marker = "extra == 'local-inference'", specifier = ">=1.2.0,<2.0.0" },
@@ -7571,7 +7573,6 @@ dependencies = [
     { name = "onnxruntime", version = "1.25.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.12.*' or sys_platform != 'win32'" },
     { name = "opencv-python", marker = "python_full_version == '3.12.*' or sys_platform != 'win32'" },
     { name = "pandas", marker = "python_full_version == '3.12.*' or sys_platform != 'win32'" },
-    { name = "pdfminer-six", marker = "python_full_version == '3.12.*' or sys_platform != 'win32'" },
     { name = "pypdfium2", marker = "python_full_version == '3.12.*' or sys_platform != 'win32'" },
     { name = "rapidfuzz", marker = "python_full_version == '3.12.*' or sys_platform != 'win32'" },
     { name = "scipy", marker = "python_full_version == '3.12.*' or sys_platform != 'win32'" },

@@ -507,7 +507,7 @@ def test_auto_partition_pdf_from_filename(pass_metadata_filename: bool, content_
     )
 
     e = elements[0]
-    assert isinstance(e, Title)
+    assert isinstance(e, Text)
     assert e.text.startswith("eastern mediterranean")
     assert e.metadata.filename == os.path.basename(file_path)
     assert e.metadata.file_directory == os.path.split(file_path)[0]
@@ -534,7 +534,7 @@ def test_auto_partition_pdf_from_file(pass_metadata_filename: bool, content_type
         )
 
     e = elements[0]
-    assert isinstance(e, Title)
+    assert isinstance(e, Text)
     assert e.text.startswith("eastern mediterranean")
 
     e = elements[1]

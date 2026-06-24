@@ -11,12 +11,11 @@ from typing import IO, TYPE_CHECKING, Any, Optional, Union, cast
 
 import numpy as np
 import wrapt
-from pdfminer.layout import LTContainer, LTImage, LTItem, LTTextBox
-from pdfminer.utils import open_filename
+from core_pdf.compat.pdfminer.layout import LTContainer, LTImage, LTItem, LTTextBox
+from core_pdf.compat.pdfminer.utils import open_filename
+from core_pdf.document.document import PdfDocument
 from pi_heif import register_heif_opener
 from PIL import Image as PILImage
-from pypdf import PdfReader
-from pypdf.generic import ArrayObject, IndirectObject
 
 from unstructured.chunking import add_chunking_strategy
 from unstructured.cleaners.core import (
@@ -77,18 +76,11 @@ from unstructured.partition.utils.constants import (
     PartitionStrategy,
 )
 from unstructured.partition.utils.sorting import coord_has_valid_points, sort_page_elements
-from unstructured.patches.pdfminer import patch_psparser
 from unstructured.utils import first, requires_dependencies
 
 if TYPE_CHECKING:
     from unstructured_inference.inference.layout import DocumentLayout
     from unstructured_inference.inference.layoutelement import LayoutElement
-
-
-# Correct a bug that was introduced by a previous patch to
-# pdfminer.six, causing needless and unsuccessful repairing of PDFs
-# which were not actually broken.
-patch_psparser()
 
 
 RE_MULTISPACE_INCLUDING_NEWLINES = re.compile(pattern=r"\s+", flags=re.DOTALL)
@@ -476,7 +468,7 @@ def _partition_pdf_with_pdfminer(
     return elements
 
 
-@requires_dependencies("pdfminer")
+@requires_dependencies("core_pdf")
 def _process_pdfminer_pages(
     fp: IO[bytes],
     filename: str,
@@ -591,14 +583,8 @@ def _get_pdf_page_number(
     filename: str = "",
     file: Optional[bytes | IO[bytes]] = None,
 ) -> int:
-    if file:
-        number_of_pages = PdfReader(file).get_num_pages()
-        file.seek(0)
-    elif filename:
-        number_of_pages = PdfReader(filename).get_num_pages()
-    else:
-        raise ValueError("Either 'file' or 'filename' must be provided.")
-    return number_of_pages
+    with _open_core_pdf_document(filename=filename, file=file) as document:
+        return document.page_count()
 
 
 def check_pdf_hi_res_max_pages_exceeded(
@@ -678,64 +664,39 @@ def is_pdf_too_complex(
         if file_size < min_file_size_bytes:
             return False
 
-        # Build reader
-        if file is not None:
-            if isinstance(file, bytes):
-                reader = PdfReader(io.BytesIO(file))
-            else:
-                file.seek(0)
-                reader = PdfReader(file)
-        else:
-            reader = PdfReader(filename)
+        with _open_core_pdf_document(filename=filename, file=file) as document:
+            if document.page_count() == 0:
+                return False
 
-        if not reader.pages:
-            return False
+            for page_index, page in enumerate(document.pages):
+                try:
+                    raw_data = b"".join(stream.data for stream in page.iter_content_streams())
+                except Exception:
+                    continue
 
-        for page_index, page in enumerate(reader.pages):
-            contents = page.get("/Contents")
-            if contents is None:
-                continue
+                # Skip pages with small content streams
+                if len(raw_data) < min_raw_stream_bytes:
+                    continue
 
-            # Decode raw stream bytes (cheap relative to full ContentStream parsing)
-            raw_data = b""
-            try:
-                if isinstance(contents, ArrayObject):
-                    for item in contents:
-                        obj = item.get_object() if isinstance(item, IndirectObject) else item
-                        if hasattr(obj, "get_data"):
-                            raw_data += obj.get_data()
-                else:
-                    obj = (
-                        contents.get_object() if isinstance(contents, IndirectObject) else contents
+                # Regex count graphics and text operators without fully parsing the stream
+                num_graphics_ops = len(GRAPHICS_OPS_PATTERN.findall(raw_data))
+
+                # Early exit: if graphics ops don't even reach threshold, skip text counting
+                if num_graphics_ops <= max_graphics_ops:
+                    continue
+
+                num_text_ops = len(TEXT_OPS_PATTERN.findall(raw_data))
+                ratio = num_graphics_ops / max(num_text_ops, 1)
+
+                if ratio > min_graphics_to_text_ratio:
+                    logger.info(
+                        f"Page {page_index + 1} has {num_graphics_ops} graphics ops, "
+                        f"{num_text_ops} text ops (ratio: {ratio:.1f}). "
+                        f"Exceeds thresholds (ops: {max_graphics_ops}, "
+                        f"ratio: {min_graphics_to_text_ratio}). "
+                        "Flagging PDF as too complex for text extraction."
                     )
-                    if hasattr(obj, "get_data"):
-                        raw_data = obj.get_data()
-            except Exception:
-                continue
-
-            # Skip pages with small content streams
-            if len(raw_data) < min_raw_stream_bytes:
-                continue
-
-            # Regex count graphics and text operators without fully parsing the stream
-            num_graphics_ops = len(GRAPHICS_OPS_PATTERN.findall(raw_data))
-
-            # Early exit: if graphics ops don't even reach threshold, skip text counting
-            if num_graphics_ops <= max_graphics_ops:
-                continue
-
-            num_text_ops = len(TEXT_OPS_PATTERN.findall(raw_data))
-            ratio = num_graphics_ops / max(num_text_ops, 1)
-
-            if ratio > min_graphics_to_text_ratio:
-                logger.info(
-                    f"Page {page_index + 1} has {num_graphics_ops} graphics ops, "
-                    f"{num_text_ops} text ops (ratio: {ratio:.1f}). "
-                    f"Exceeds thresholds (ops: {max_graphics_ops}, "
-                    f"ratio: {min_graphics_to_text_ratio}). "
-                    "Flagging PDF as too complex for text extraction."
-                )
-                return True
+                    return True
 
     except Exception as e:
         logger.debug(f"is_pdf_too_complex check failed: {e}")
@@ -752,6 +713,25 @@ def is_pdf_too_complex(
             file.seek(original_pos)
 
     return False
+
+
+@contextlib.contextmanager
+def _open_core_pdf_document(
+    filename: str = "",
+    file: Optional[bytes | IO[bytes]] = None,
+):
+    if file is not None:
+        if isinstance(file, bytes):
+            yield PdfDocument(io.BytesIO(file))
+            return
+        file.seek(0)
+        yield PdfDocument(file)
+        return
+    if filename:
+        with open(filename, "rb") as fp:
+            yield PdfDocument(fp)
+        return
+    raise ValueError("Either 'file' or 'filename' must be provided.")
 
 
 def _enable_detect_vertical_if_rotated(
@@ -1061,6 +1041,7 @@ def _partition_pdf_or_image_local(
                     " ",
                     el.text or "",
                 ).strip()
+                _realign_link_start_indices(el)
             if el.text or isinstance(el, PageBreak):
                 out_elements.append(cast(Element, el))
 
@@ -1103,6 +1084,31 @@ def _partition_pdf_or_image_local(
         )
 
     return out_elements
+
+
+def _realign_link_start_indices(element: Element) -> None:
+    """Keep link offsets valid after final text normalization."""
+
+    links = getattr(element.metadata, "links", None)
+    text = getattr(element, "text", None)
+    if not links or not text:
+        return
+
+    for link in links:
+        link_text = link.get("text")
+        start_index = link.get("start_index")
+        if not link_text or not isinstance(start_index, int):
+            continue
+        if text[start_index : start_index + len(link_text)] == link_text:
+            continue
+
+        matches: list[int] = []
+        cursor = text.find(link_text)
+        while cursor != -1:
+            matches.append(cursor)
+            cursor = text.find(link_text, cursor + 1)
+        if matches:
+            link["start_index"] = min(matches, key=lambda index: abs(index - start_index))
 
 
 def _partition_pdf_with_pdfparser(
@@ -1268,7 +1274,9 @@ def _extract_text(item: LTItem) -> str:
 # They throw an error when we call interpreter.process_page
 # Since we don't need color info, we can just drop it in the pdfminer code
 # See #2059
-@wrapt.patch_function_wrapper("pdfminer.pdfinterp", "PDFPageInterpreter.init_resources")
+@wrapt.patch_function_wrapper(
+    "core_pdf.compat.pdfminer.pdfinterp", "PDFPageInterpreter.init_resources"
+)
 def pdfminer_interpreter_init_resources(wrapped, instance, args, kwargs):
     resources = args[0]
     if "ColorSpace" in resources:
