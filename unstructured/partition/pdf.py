@@ -11,8 +11,8 @@ from typing import IO, TYPE_CHECKING, Any, Optional, Union, cast
 
 import numpy as np
 import wrapt
-from pdfminer.layout import LTContainer, LTImage, LTItem, LTTextBox
-from pdfminer.utils import open_filename
+from core_pdf.integrations.pdfminer.six.layout import LTContainer, LTImage, LTItem, LTTextBox
+from core_pdf.integrations.pdfminer.six.utils import open_filename
 from pi_heif import register_heif_opener
 from PIL import Image as PILImage
 from pypdf import PdfReader
@@ -476,7 +476,7 @@ def _partition_pdf_with_pdfminer(
     return elements
 
 
-@requires_dependencies("pdfminer")
+@requires_dependencies("core_pdf")
 def _process_pdfminer_pages(
     fp: IO[bytes],
     filename: str,
@@ -1268,7 +1268,9 @@ def _extract_text(item: LTItem) -> str:
 # They throw an error when we call interpreter.process_page
 # Since we don't need color info, we can just drop it in the pdfminer code
 # See #2059
-@wrapt.patch_function_wrapper("pdfminer.pdfinterp", "PDFPageInterpreter.init_resources")
+@wrapt.patch_function_wrapper(
+    "core_pdf.integrations.pdfminer.six.pdfinterp", "PDFPageInterpreter.init_resources"
+)
 def pdfminer_interpreter_init_resources(wrapped, instance, args, kwargs):
     resources = args[0]
     if "ColorSpace" in resources:

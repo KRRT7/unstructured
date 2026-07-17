@@ -1,8 +1,8 @@
 import functools
 from typing import Tuple, Union
 
-import pdfminer
-from pdfminer.psparser import (
+from core_pdf.integrations.pdfminer import six as pdfminer
+from core_pdf.integrations.pdfminer.six.psparser import (
     END_KEYWORD,
     KWD,
     PSEOF,
